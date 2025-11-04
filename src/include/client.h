@@ -3,12 +3,23 @@
 
 #include <iostream>
 #include <utility>
+#include <queue>
+#include <vector>
+#include <cstring>
 
 extern int rows;         // The count of rows of the game map.
 extern int columns;      // The count of columns of the game map.
 extern int total_mines;  // The count of mines of the game map.
 
 // You MUST NOT use any other external variables except for rows, columns and total_mines.
+
+// Custom global variables for client
+char client_map[35][35];     // The map as seen by client
+bool client_visited[35][35]; // Whether grid has been visited
+bool client_marked[35][35];  // Whether grid has been marked
+int client_mine_count[35][35]; // Mine count for visited grids
+int client_visited_count;    // Number of visited grids
+int client_marked_count;     // Number of marked grids
 
 /**
  * @brief The definition of function Execute(int, int, bool)
@@ -34,7 +45,19 @@ void Execute(int r, int c, int type);
  * will read the scale of the game map and the first step taken by the server (see README).
  */
 void InitGame() {
-  // TODO (student): Initialize all your global variables!
+  // Initialize all custom global variables
+  client_visited_count = 0;
+  client_marked_count = 0;
+  
+  for (int i = 0; i < 35; i++) {
+    for (int j = 0; j < 35; j++) {
+      client_map[i][j] = '?';
+      client_visited[i][j] = false;
+      client_marked[i][j] = false;
+      client_mine_count[i][j] = 0;
+    }
+  }
+  
   int first_row, first_column;
   std::cin >> first_row >> first_column;
   Execute(first_row, first_column, 0);
@@ -51,7 +74,24 @@ void InitGame() {
  *     01?
  */
 void ReadMap() {
-  // TODO (student): Implement me!
+  for (int i = 0; i < rows; i++) {
+    std::string line;
+    std::cin >> line;
+    for (int j = 0; j < columns; j++) {
+      client_map[i][j] = line[j];
+      
+      // Update state based on what we read
+      if (line[j] >= '0' && line[j] <= '8') {
+        client_visited[i][j] = true;
+        client_mine_count[i][j] = line[j] - '0';
+      } else if (line[j] == '@') {
+        client_marked[i][j] = true;
+      } else if (line[j] == 'X') {
+        // Game over - hit a mine or marked wrong
+        client_visited[i][j] = true;
+      }
+    }
+  }
 }
 
 /**
@@ -61,10 +101,122 @@ void ReadMap() {
  * mind and make your decision here! Caution: you can only execute once in this function.
  */
 void Decide() {
-  // TODO (student): Implement me!
-  // while (true) {
-  //   Execute(0, 0);
-  // }
+  int dr[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+  int dc[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+  
+  // Strategy 1: Mark obvious mines
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (client_visited[i][j] && client_map[i][j] >= '1' && client_map[i][j] <= '8') {
+        int mine_count = client_mine_count[i][j];
+        int marked_neighbors = 0;
+        int unknown_neighbors = 0;
+        int first_unknown_r = -1, first_unknown_c = -1;
+        
+        for (int d = 0; d < 8; d++) {
+          int ni = i + dr[d];
+          int nj = j + dc[d];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (client_marked[ni][nj]) {
+              marked_neighbors++;
+            } else if (!client_visited[ni][nj] && client_map[ni][nj] == '?') {
+              unknown_neighbors++;
+              if (first_unknown_r == -1) {
+                first_unknown_r = ni;
+                first_unknown_c = nj;
+              }
+            }
+          }
+        }
+        
+        // If remaining unknown equals remaining mines, mark them
+        if (unknown_neighbors > 0 && unknown_neighbors == mine_count - marked_neighbors) {
+          Execute(first_unknown_r, first_unknown_c, 1);
+          return;
+        }
+      }
+    }
+  }
+  
+  // Strategy 2: Visit safe cells
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (client_visited[i][j] && client_map[i][j] >= '0' && client_map[i][j] <= '8') {
+        int mine_count = client_mine_count[i][j];
+        int marked_neighbors = 0;
+        int first_unknown_r = -1, first_unknown_c = -1;
+        
+        for (int d = 0; d < 8; d++) {
+          int ni = i + dr[d];
+          int nj = j + dc[d];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (client_marked[ni][nj]) {
+              marked_neighbors++;
+            } else if (!client_visited[ni][nj] && client_map[ni][nj] == '?') {
+              if (first_unknown_r == -1) {
+                first_unknown_r = ni;
+                first_unknown_c = nj;
+              }
+            }
+          }
+        }
+        
+        // If all mines are marked, visit unknown neighbors
+        if (marked_neighbors == mine_count && first_unknown_r != -1) {
+          Execute(first_unknown_r, first_unknown_c, 0);
+          return;
+        }
+      }
+    }
+  }
+  
+  // Strategy 3: Visit cell adjacent to lowest number
+  int best_r = -1, best_c = -1;
+  int best_score = 100;
+  
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (!client_visited[i][j] && client_map[i][j] == '?') {
+        int min_neighbor = 100;
+        bool has_visited_neighbor = false;
+        
+        for (int d = 0; d < 8; d++) {
+          int ni = i + dr[d];
+          int nj = j + dc[d];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (client_visited[ni][nj] && client_map[ni][nj] >= '0' && client_map[ni][nj] <= '8') {
+              has_visited_neighbor = true;
+              int count = client_mine_count[ni][nj];
+              if (count < min_neighbor) {
+                min_neighbor = count;
+              }
+            }
+          }
+        }
+        
+        if (has_visited_neighbor && min_neighbor < best_score) {
+          best_score = min_neighbor;
+          best_r = i;
+          best_c = j;
+        }
+      }
+    }
+  }
+  
+  if (best_r != -1) {
+    Execute(best_r, best_c, 0);
+    return;
+  }
+  
+  // Strategy 4: Visit any unvisited cell
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (!client_visited[i][j] && client_map[i][j] == '?') {
+        Execute(i, j, 0);
+        return;
+      }
+    }
+  }
 }
 
 #endif
