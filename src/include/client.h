@@ -200,7 +200,7 @@ void Decide() {
   }
   
   // Strategy 4: Comprehensive constraint propagation with all neighbors
-  // Try all combinations of constraints to deduce safe/mine cells
+  // First pass: simple subset relationships
   for (int i1 = 0; i1 < rows; i1++) {
     for (int j1 = 0; j1 < columns; j1++) {
       if (!client_visited[i1][j1] || client_map[i1][j1] < '1' || client_map[i1][j1] > '8') continue;
@@ -220,9 +220,9 @@ void Decide() {
         }
       }
       int remaining1 = mc1 - marked1;
-      if (unknown1.empty()) continue;
+      if (unknown1.empty() || remaining1 == 0) continue;
       
-      // Compare with all neighboring numbered cells
+      // Compare with all other numbered cells
       for (int i2 = 0; i2 < rows; i2++) {
         for (int j2 = 0; j2 < columns; j2++) {
           if (i1 == i2 && j1 == j2) continue;
@@ -243,7 +243,7 @@ void Decide() {
             }
           }
           int remaining2 = mc2 - marked2;
-          if (unknown2.empty()) continue;
+          if (unknown2.empty() || remaining2 == 0) continue;
           
           // Find cells only in unknown1, only in unknown2, and shared
           std::vector<std::pair<int,int>> only1, only2, shared;
@@ -269,8 +269,10 @@ void Decide() {
             if (!found) only2.push_back(p);
           }
           
+          if (shared.empty()) continue;
+          
           // Case 1: unknown1 is subset of unknown2
-          if (only1.empty() && !shared.empty()) {
+          if (only1.empty()) {
             int mines_in_only2 = remaining2 - remaining1;
             if (mines_in_only2 == (int)only2.size() && only2.size() > 0) {
               // All cells in only2 are mines
@@ -280,11 +282,17 @@ void Decide() {
               // All cells in only2 are safe
               Execute(only2[0].first, only2[0].second, 0);
               return;
+            } else if (mines_in_only2 < 0) {
+              // Contradiction means shared has fewer mines than cell2 expects
+              // The shared region has at most remaining2 mines
+              // and at least remaining1 mines
+              // So shared has remaining1 mines and only2 must have (remaining2 - remaining1) mines
+              // But this was already covered above
             }
           }
           
           // Case 2: unknown2 is subset of unknown1
-          if (only2.empty() && !shared.empty()) {
+          if (only2.empty()) {
             int mines_in_only1 = remaining1 - remaining2;
             if (mines_in_only1 == (int)only1.size() && only1.size() > 0) {
               // All cells in only1 are mines
@@ -294,6 +302,67 @@ void Decide() {
               // All cells in only1 are safe
               Execute(only1[0].first, only1[0].second, 0);
               return;
+            }
+          }
+          
+          // Case 3: Disjoint sets - can sometimes deduce from combined constraints
+          if (only1.size() > 0 && only2.size() > 0 && shared.size() > 0) {
+            // Try to find a third cell that overlaps with shared
+            for (int i3 = 0; i3 < rows; i3++) {
+              for (int j3 = 0; j3 < columns; j3++) {
+                if ((i3 == i1 && j3 == j1) || (i3 == i2 && j3 == j2)) continue;
+                if (!client_visited[i3][j3] || client_map[i3][j3] < '1' || client_map[i3][j3] > '8') continue;
+                
+                int mc3 = client_mine_count[i3][j3];
+                int marked3 = 0;
+                std::vector<std::pair<int,int>> unknown3;
+                
+                for (int d = 0; d < 8; d++) {
+                  int ni = i3 + dr[d];
+                  int nj = j3 + dc[d];
+                  if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+                    if (client_marked[ni][nj]) marked3++;
+                    else if (!client_visited[ni][nj] && client_map[ni][nj] == '?') {
+                      unknown3.push_back({ni, nj});
+                    }
+                  }
+                }
+                int remaining3 = mc3 - marked3;
+                if (unknown3.empty() || remaining3 == 0) continue;
+                
+                // Check if unknown3 overlaps with shared but not with only1 or only2
+                bool has_shared = false;
+                bool has_only1 = false;
+                bool has_only2 = false;
+                
+                for (auto &p : unknown3) {
+                  for (auto &q : shared) {
+                    if (p.first == q.first && p.second == q.second) {
+                      has_shared = true;
+                      break;
+                    }
+                  }
+                  for (auto &q : only1) {
+                    if (p.first == q.first && p.second == q.second) {
+                      has_only1 = true;
+                      break;
+                    }
+                  }
+                  for (auto &q : only2) {
+                    if (p.first == q.first && p.second == q.second) {
+                      has_only2 = true;
+                      break;
+                    }
+                  }
+                }
+                
+                // If cell3 sees only shared cells from cell1 and cell2's unknowns
+                if (has_shared && !has_only1 && !has_only2) {
+                  // This gives us additional constraint on shared
+                  // Might allow us to deduce something
+                  // This is complex, skip for now
+                }
+              }
             }
           }
         }
