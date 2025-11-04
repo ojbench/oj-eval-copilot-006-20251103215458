@@ -199,8 +199,8 @@ void Decide() {
     }
   }
   
-  // Strategy 4: Advanced constraint propagation
-  // Look for pairs of cells that share information
+  // Strategy 4: Comprehensive constraint propagation with all neighbors
+  // Try all combinations of constraints to deduce safe/mine cells
   for (int i1 = 0; i1 < rows; i1++) {
     for (int j1 = 0; j1 < columns; j1++) {
       if (!client_visited[i1][j1] || client_map[i1][j1] < '1' || client_map[i1][j1] > '8') continue;
@@ -220,81 +220,81 @@ void Decide() {
         }
       }
       int remaining1 = mc1 - marked1;
+      if (unknown1.empty()) continue;
       
-      // Compare with neighbors
-      for (int d2 = 0; d2 < 8; d2++) {
-        int i2 = i1 + dr[d2];
-        int j2 = j1 + dc[d2];
-        if (i2 < 0 || i2 >= rows || j2 < 0 || j2 >= columns) continue;
-        if (!client_visited[i2][j2] || client_map[i2][j2] < '1' || client_map[i2][j2] > '8') continue;
-        
-        int mc2 = client_mine_count[i2][j2];
-        int marked2 = 0;
-        std::vector<std::pair<int,int>> unknown2;
-        
-        for (int d = 0; d < 8; d++) {
-          int ni = i2 + dr[d];
-          int nj = j2 + dc[d];
-          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
-            if (client_marked[ni][nj]) marked2++;
-            else if (!client_visited[ni][nj] && client_map[ni][nj] == '?') {
-              unknown2.push_back({ni, nj});
+      // Compare with all neighboring numbered cells
+      for (int i2 = 0; i2 < rows; i2++) {
+        for (int j2 = 0; j2 < columns; j2++) {
+          if (i1 == i2 && j1 == j2) continue;
+          if (!client_visited[i2][j2] || client_map[i2][j2] < '1' || client_map[i2][j2] > '8') continue;
+          
+          int mc2 = client_mine_count[i2][j2];
+          int marked2 = 0;
+          std::vector<std::pair<int,int>> unknown2;
+          
+          for (int d = 0; d < 8; d++) {
+            int ni = i2 + dr[d];
+            int nj = j2 + dc[d];
+            if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+              if (client_marked[ni][nj]) marked2++;
+              else if (!client_visited[ni][nj] && client_map[ni][nj] == '?') {
+                unknown2.push_back({ni, nj});
+              }
             }
           }
-        }
-        int remaining2 = mc2 - marked2;
-        
-        // Find cells only in unknown1
-        std::vector<std::pair<int,int>> only1, only2, shared;
-        for (auto &p : unknown1) {
-          bool found = false;
-          for (auto &q : unknown2) {
-            if (p.first == q.first && p.second == q.second) {
-              found = true;
-              shared.push_back(p);
-              break;
+          int remaining2 = mc2 - marked2;
+          if (unknown2.empty()) continue;
+          
+          // Find cells only in unknown1, only in unknown2, and shared
+          std::vector<std::pair<int,int>> only1, only2, shared;
+          for (auto &p : unknown1) {
+            bool found = false;
+            for (auto &q : unknown2) {
+              if (p.first == q.first && p.second == q.second) {
+                found = true;
+                break;
+              }
+            }
+            if (found) shared.push_back(p);
+            else only1.push_back(p);
+          }
+          for (auto &p : unknown2) {
+            bool found = false;
+            for (auto &q : shared) {
+              if (p.first == q.first && p.second == q.second) {
+                found = true;
+                break;
+              }
+            }
+            if (!found) only2.push_back(p);
+          }
+          
+          // Case 1: unknown1 is subset of unknown2
+          if (only1.empty() && !shared.empty()) {
+            int mines_in_only2 = remaining2 - remaining1;
+            if (mines_in_only2 == (int)only2.size() && only2.size() > 0) {
+              // All cells in only2 are mines
+              Execute(only2[0].first, only2[0].second, 1);
+              return;
+            } else if (mines_in_only2 == 0 && only2.size() > 0) {
+              // All cells in only2 are safe
+              Execute(only2[0].first, only2[0].second, 0);
+              return;
             }
           }
-          if (!found) only1.push_back(p);
-        }
-        for (auto &p : unknown2) {
-          bool found = false;
-          for (auto &q : unknown1) {
-            if (p.first == q.first && p.second == q.second) {
-              found = true;
-              break;
+          
+          // Case 2: unknown2 is subset of unknown1
+          if (only2.empty() && !shared.empty()) {
+            int mines_in_only1 = remaining1 - remaining2;
+            if (mines_in_only1 == (int)only1.size() && only1.size() > 0) {
+              // All cells in only1 are mines
+              Execute(only1[0].first, only1[0].second, 1);
+              return;
+            } else if (mines_in_only1 == 0 && only1.size() > 0) {
+              // All cells in only1 are safe
+              Execute(only1[0].first, only1[0].second, 0);
+              return;
             }
-          }
-          if (!found) only2.push_back(p);
-        }
-        
-        // If unknown1 is a subset of unknown2
-        if (only1.empty() && !shared.empty() && !only2.empty()) {
-          // All mines in shared are accounted for by cell1
-          // Cell2 needs (remaining2 - remaining1) mines in only2
-          if (remaining2 - remaining1 == (int)only2.size() && only2.size() > 0) {
-            // Mark all cells in only2
-            Execute(only2[0].first, only2[0].second, 1);
-            return;
-          } else if (remaining2 == remaining1 && only2.size() > 0) {
-            // Visit all cells in only2 (they're safe)
-            Execute(only2[0].first, only2[0].second, 0);
-            return;
-          }
-        }
-        
-        // If unknown2 is a subset of unknown1
-        if (only2.empty() && !shared.empty() && !only1.empty()) {
-          // All mines in shared are accounted for by cell2
-          // Cell1 needs (remaining1 - remaining2) mines in only1
-          if (remaining1 - remaining2 == (int)only1.size() && only1.size() > 0) {
-            // Mark all cells in only1
-            Execute(only1[0].first, only1[0].second, 1);
-            return;
-          } else if (remaining1 == remaining2 && only1.size() > 0) {
-            // Visit all cells in only1 (they're safe)
-            Execute(only1[0].first, only1[0].second, 0);
-            return;
           }
         }
       }
