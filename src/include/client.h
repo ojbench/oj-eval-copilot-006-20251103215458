@@ -301,8 +301,66 @@ void Decide() {
     }
   }
   
-  // Strategy 5: Visit cell adjacent to lowest number (prefer 0 or 1)
+  // Strategy 5: Probability-based guessing
+  // Calculate mine probability for each unknown cell
   int best_r = -1, best_c = -1;
+  double min_prob = 2.0;  // Higher than any valid probability
+  
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (!client_visited[i][j] && client_map[i][j] == '?') {
+        // Calculate probability this cell is a mine
+        double prob_sum = 0.0;
+        int constraint_count = 0;
+        
+        for (int d = 0; d < 8; d++) {
+          int ni = i + dr[d];
+          int nj = j + dc[d];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (client_visited[ni][nj] && client_map[ni][nj] >= '0' && client_map[ni][nj] <= '8') {
+              int mc = client_mine_count[ni][nj];
+              int marked = 0;
+              int unknown = 0;
+              
+              for (int d2 = 0; d2 < 8; d2++) {
+                int nni = ni + dr[d2];
+                int nnj = nj + dc[d2];
+                if (nni >= 0 && nni < rows && nnj >= 0 && nnj < columns) {
+                  if (client_marked[nni][nnj]) marked++;
+                  else if (!client_visited[nni][nnj] && client_map[nni][nnj] == '?') unknown++;
+                }
+              }
+              
+              if (unknown > 0) {
+                double prob = (double)(mc - marked) / unknown;
+                prob_sum += prob;
+                constraint_count++;
+              }
+            }
+          }
+        }
+        
+        if (constraint_count > 0) {
+          double avg_prob = prob_sum / constraint_count;
+          if (avg_prob < min_prob) {
+            min_prob = avg_prob;
+            best_r = i;
+            best_c = j;
+          }
+        }
+      }
+    }
+  }
+  
+  if (best_r != -1 && min_prob < 0.5) {
+    // Only guess if probability is reasonably low
+    Execute(best_r, best_c, 0);
+    return;
+  }
+  
+  // Strategy 6: Visit cell adjacent to lowest number (prefer 0 or 1)
+  best_r = -1;
+  best_c = -1;
   int best_score = 100;
   
   for (int i = 0; i < rows; i++) {
@@ -339,7 +397,7 @@ void Decide() {
     return;
   }
   
-  // Strategy 6: Visit any unvisited cell
+  // Strategy 7: Visit any unvisited cell
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       if (!client_visited[i][j] && client_map[i][j] == '?') {
