@@ -301,8 +301,8 @@ void Decide() {
     }
   }
   
-  // Strategy 5: Probability-based guessing with better calculation
-  // Calculate mine probability for each unknown cell using Bayesian inference
+  // Strategy 5: Probability-based guessing
+  // Calculate mine probability for each unknown cell
   int best_r = -1, best_c = -1;
   double min_prob = 2.0;  // Higher than any valid probability
   
@@ -312,7 +312,6 @@ void Decide() {
         // Calculate probability this cell is a mine
         double prob_sum = 0.0;
         int constraint_count = 0;
-        double min_neighbor_prob = 2.0;
         
         for (int d = 0; d < 8; d++) {
           int ni = i + dr[d];
@@ -336,18 +335,17 @@ void Decide() {
                 double prob = (double)(mc - marked) / unknown;
                 prob_sum += prob;
                 constraint_count++;
-                if (prob < min_neighbor_prob) min_neighbor_prob = prob;
               }
             }
           }
         }
         
         if (constraint_count > 0) {
-          // Use minimum probability (most conservative)
-          double effective_prob = min_neighbor_prob;
-          if (effective_prob < min_prob || 
-              (effective_prob == min_prob && constraint_count > 1)) {
-            min_prob = effective_prob;
+          double avg_prob = prob_sum / constraint_count;
+          // Prefer cells with more constraints (more certain) and lower probability
+          // Break ties by preferring cells with more neighbors
+          if (avg_prob < min_prob || (avg_prob == min_prob && constraint_count > 2)) {
+            min_prob = avg_prob;
             best_r = i;
             best_c = j;
           }
@@ -356,7 +354,8 @@ void Decide() {
     }
   }
   
-  if (best_r != -1) {
+  if (best_r != -1 && min_prob < 0.5) {
+    // Only guess if probability is reasonably low
     Execute(best_r, best_c, 0);
     return;
   }
