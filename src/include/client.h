@@ -104,7 +104,36 @@ void Decide() {
   int dr[] = {-1, -1, -1, 0, 0, 1, 1, 1};
   int dc[] = {-1, 0, 1, -1, 1, -1, 0, 1};
   
-  // Strategy 1: Mark obvious mines
+  // Strategy 1: Auto-explore on visited grids where all mines are marked
+  for (int i = 0; i < rows; i++) {
+    for (int j = 0; j < columns; j++) {
+      if (client_visited[i][j] && client_map[i][j] >= '0' && client_map[i][j] <= '8') {
+        int mine_count = client_mine_count[i][j];
+        int marked_neighbors = 0;
+        bool has_unknown = false;
+        
+        for (int d = 0; d < 8; d++) {
+          int ni = i + dr[d];
+          int nj = j + dc[d];
+          if (ni >= 0 && ni < rows && nj >= 0 && nj < columns) {
+            if (client_marked[ni][nj]) {
+              marked_neighbors++;
+            } else if (!client_visited[ni][nj] && client_map[ni][nj] == '?') {
+              has_unknown = true;
+            }
+          }
+        }
+        
+        // If all mines around this grid are marked and there are unknown neighbors, auto-explore
+        if (marked_neighbors == mine_count && mine_count > 0 && has_unknown) {
+          Execute(i, j, 2);
+          return;
+        }
+      }
+    }
+  }
+  
+  // Strategy 2: Mark obvious mines
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       if (client_visited[i][j] && client_map[i][j] >= '1' && client_map[i][j] <= '8') {
@@ -138,7 +167,7 @@ void Decide() {
     }
   }
   
-  // Strategy 2: Visit safe cells
+  // Strategy 3: Visit safe cells
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       if (client_visited[i][j] && client_map[i][j] >= '0' && client_map[i][j] <= '8') {
@@ -170,7 +199,7 @@ void Decide() {
     }
   }
   
-  // Strategy 3: Visit cell adjacent to lowest number
+  // Strategy 4: Visit cell adjacent to lowest number
   int best_r = -1, best_c = -1;
   int best_score = 100;
   
@@ -208,7 +237,7 @@ void Decide() {
     return;
   }
   
-  // Strategy 4: Visit any unvisited cell
+  // Strategy 5: Visit any unvisited cell
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       if (!client_visited[i][j] && client_map[i][j] == '?') {
